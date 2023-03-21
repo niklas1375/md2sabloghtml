@@ -1,0 +1,23 @@
+{
+  "name": "md2sapbloghtml",
+  "version": "1.0.0",
+  "description": "Transpile MD files to HTML for SAP Blogs",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "transpile": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/niklas1375/md2sabloghtml"
+  },
+  "keywords": [
+    "markdown",
+    "html"
+  ],
+  "author": "Niklas Miroll",
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "marked": "^4.2.2"
+  }
+}

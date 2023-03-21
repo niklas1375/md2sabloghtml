@@ -1,0 +1,163 @@
+<p>One of the (sometimes) hidden champions in the SAP product universe is SAP Business One (B1) – an ERP solution for SME customers that has been around for almost 20 years now. The age doesn’t make it irrelevant though as there still is a strong customer base happily working on B1 as is the case for one of my recent customers: Actovent and their flagship solution “<a href="https://www.linkedin.com/posts/glenn-gonzalez_customerspotlight-sustainability-innovation-activity-6887306052489027584-dVIM">Frischluftmanager</a>“. The solution was developed on the SAP Business Technology Platform (BTP) accessing the B1 Service Layer and therefore being dependent on it. To alleviate the dependency and reduce load on the B1 system, the decision was made, to the decouple the extension from the B1 system. The main challenge was to keep up to date with relevant data such as Business Partner data as well as Order Data. Therefore an event-driven architecture was established to integrate the solution with the B1 system.</p>
+<p>The benefits of the solution are:</p>
+<ul>
+<li>Reduced load on the B1 system (push instead of pull)</li>
+<li>Near-real-time current master / customer data in BTP</li>
+<li>Easy to extend on further use cases (additional events)</li>
+<li><a href="https://blogs.sap.com/2022/09/01/saps-event-driven-ecosystem-revisited/">All the other advantages of an event-driven architecture</a></li>
+</ul>
+<p>The <a href="https://blogs.sap.com/2018/08/14/integration-framework-for-sap-business-one-b1if-central-blog/">Business One Integration framework</a> (B1If) is the key integration channel for B1 and our use case. The integration framework provides an infrastructure that allows for the communication and interaction between software applications such as SAP Business One, other SAP solutions as well as non-SAP systems; whether they are cloud applications or on-premise applications. In this case we’ll use it to connect our B1 system to the SAP Event Mesh service on SAP BTP.</p>
+<h2 id="getting-started">Getting Started</h2>
+<p>The BOM of the solution is pretty short:</p>
+<ul>
+<li>A running SAP Business One system with the B1 Integration framework (B1If) set up</li>
+<li><a href="https://help.sap.com/docs/SAP_EM?locale=en-US">SAP Event Mesh</a> instance on BTP</li>
+<li>An application actually handling the events in BTP</li>
+</ul>
+<p>To get an overview of the envisioned solution here’s the architecture diagram with all components including a sample application handling the events by storing their contents in SAP HANA Cloud:</p>
+<p>
+<em style="color: red">put image "Architecture Overview" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">Architecture Overview</p>
+
+<h2 id="token-retrieval-scenario">Token Retrieval Scenario</h2>
+<p>The first scenario to be developed is an auxiliary scenario which we need to be able to authenticate for our later publication of the events to the SAP Event Mesh instance. For this we need the credentials of the SAP Event Mesh instance from the BTP cockpit which requires <a href="https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/4514a14ab6424d9f84f1b8650df609ce.html">a service key to be created</a> for this instance. When copying the credentials it is important to choose the credentials where the protocol is <code>httprest</code>.</p>
+<p>
+<em style="color: red">put image "SAP Event Mesh instance credentials" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">SAP Event Mesh instance credentials</p>
+
+<p>The retrieval scenario in B1If is rather simple as it only consists of a time based trigger, an HTTP outbound call and storing the retrieved token in the BizStore. The flow is depicted in below pictures along with the details needed both for the token retrieval as well as storing it in the BizStore of the B1If instance. Since the OAuth token returned by the Event Mesh service expires after 11:59:59 h it’s advisable to set the recurrence to an amount shorter than that to always have a current token.</p>
+<p>
+<em style="color: red">put image "Token retrieval scenario flow" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">Token retrieval scenario flow</p>
+
+<p>
+<em style="color: red">put image "HTTP call for token" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">HTTP call for token</p>
+
+<p>
+<em style="color: red">put image "Write token to BizStore" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">Write token to BizStore</p>
+
+<h2 id="event-forwarding-scenario">Event Forwarding Scenario</h2>
+<p>The actual event forwarding scenario is triggered by events raised from the SAP Business One system. We then generate the message to be sent to the SAP Event Mesh instance from the Business Event, convert it to JSON and add in the previously retrieved OAuth token for authentication. The resulting JSON is then sent out to the SAP Event Mesh instance into a queue specified in the outbound HTTP call. In the Business Event trigger we can choose whether the data itself should be retrieved as well depending on our use case. In this case the retrieval is not done to keep the flow a bit more simple for this blog.</p>
+<p>
+<em style="color: red">put image "Event forwarding scenario flow" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">Event forwarding scenario flow</p>
+
+<p>
+<em style="color: red">put image "Event trigger: BusinessObject Order (17)" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">Event trigger: BusinessObject Order (17)</p>
+
+<p>In our use case the desired format in BTP is JSON which means a conversion from XML to JSON is needed. To give you a reference point, an example extract of the event’s XML that is passed by the B1 event trigger can be seen below.</p>
+<pre class="language-markup"><code>&lt;Event&gt;
+    &lt;b1e:b1events&gt;
+        &lt;b1e:b1event&gt;
+            &lt;b1e:eventsource&gt;XXXXXXXXXX&lt;/b1e:eventsource&gt;
+            &lt;b1e:objecttype&gt;17&lt;/b1e:objecttype&gt;
+            &lt;b1e:transactiontype&gt;U&lt;/b1e:transactiontype&gt;
+            &lt;b1e:usercode&gt;manager&lt;/b1e:usercode&gt;
+            &lt;b1e:userid&gt;manager&lt;/b1e:userid&gt;
+            &lt;b1e:keys count=&quot;1&quot;&gt;
+                &lt;b1e:key&gt;
+                    &lt;b1e:name&gt;DocEntry&lt;/b1e:name&gt;
+                    &lt;b1e:value&gt;4711&lt;/b1e:value&gt;
+                &lt;/b1e:key&gt;
+            &lt;/b1e:keys&gt;
+        &lt;/b1e:b1event&gt;
+    &lt;/b1e:b1events&gt;
+&lt;/Event&gt;
+</code></pre>
+<p>The creation of the desired JSON version of the message is achieved through an <code>xsl</code> template file which can be seen below. It retrieves the previously fetched OAuth token and populates it into a variable to be used in the HTTP call. The message body itself is transformed into a JSON array of events published by the B1 system with the relevant details from each of the events.</p>
+<pre class="language-markup"><code>&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;xsl:stylesheet xmlns:b1e=&quot;urn:com.sap.b1i.sim:b1event&quot; xmlns:b1ie=&quot;urn:com.sap.b1i.sim:b1ievent&quot; xmlns:b1im=&quot;urn:com.sap.b1i.sim:b1imessage&quot; xmlns:bfa=&quot;urn:com.sap.b1i.bizprocessor:bizatoms&quot; xmlns:exslt=&quot;http://exslt.org/common&quot; xmlns:jdbc=&quot;urn:com.sap.b1i.adapter:jdbcadapter&quot; xmlns:js=&quot;com.sap.b1i.bpc_tools.Javascript&quot; xmlns:rev=&quot;urn:com.sap.b1i.adapter:revaadapter&quot; xmlns:rfc=&quot;urn:sap-com:document:sap:rfc:functions&quot; xmlns:sim=&quot;urn:com.sap.b1i.sim:entity&quot; xmlns:utils=&quot;com.sap.b1i.bpc_tools.Utilities&quot; xmlns:vpf=&quot;urn:com.sap.b1i.vplatform:entity&quot; xmlns:xca=&quot;urn:com.sap.b1i.xcellerator:appconfig&quot; xmlns:xci=&quot;urn:com.sap.b1i.xcellerator:intdoc&quot; xmlns:xsl=&quot;http://www.w3.org/1999/XSL/Transform&quot; version=&quot;1.0&quot; exclude-result-prefixes=&quot;b1e b1ie b1im bfa jdbc js rfc utils xci xca vpf exslt sim rev&quot; b1e:force=&quot;&quot; b1ie:force=&quot;&quot; b1im:force=&quot;&quot; bfa:force=&quot;&quot; jdbc:force=&quot;&quot; js:force=&quot;&quot; rfc:force=&quot;&quot; utils:force=&quot;&quot; xci:force=&quot;&quot; xca:force=&quot;&quot; vpf:force=&quot;&quot; exslt:force=&quot;&quot; sim:force=&quot;&quot; rev:force=&quot;&quot;&gt;
+    &lt;?prodver 1.0.0?&gt;
+    &lt;xsl:include href=&quot;../../com.sap.b1i.dev.repository/IDE/init.xsl&quot;&gt;&lt;/xsl:include&gt;
+    &lt;xsl:variable name=&quot;msg&quot; select=&quot;/vpf:Msg/vpf:Body/vpf:Payload[./@Role=&amp;apos;S&amp;apos;]&quot;&gt;&lt;/xsl:variable&gt;
+    &lt;xsl:template match=&quot;/&quot;&gt;
+        &lt;vpf:Msg&gt;
+            &lt;xsl:copy-of select=&quot;/vpf:Msg/@*&quot;&gt;&lt;/xsl:copy-of&gt;
+            &lt;xsl:copy-of select=&quot;/vpf:Msg/vpf:Header&quot;&gt;&lt;/xsl:copy-of&gt;
+            &lt;vpf:Body&gt;
+                &lt;xsl:copy-of select=&quot;/vpf:Msg/vpf:Body/*&quot;&gt;&lt;/xsl:copy-of&gt;
+                &lt;vpf:Payload Role=&quot;X&quot; id=&quot;{$atom}&quot;&gt;
+                    &lt;xsl:call-template name=&quot;transform&quot;&gt;&lt;/xsl:call-template&gt;
+                &lt;/vpf:Payload&gt;
+            &lt;/vpf:Body&gt;
+        &lt;/vpf:Msg&gt;
+    &lt;/xsl:template&gt;
+    &lt;xsl:template name=&quot;transform&quot;&gt;
+        &lt;xsl:variable name=&quot;token&quot;&gt;
+            &lt;xsl:value-of select=&quot;document(&amp;apos;/MyTokens/TokenIntegrationSuite/CPIToken.xml&amp;apos;)//bfa:string[@name=&amp;apos;access_token&amp;apos;]&quot;&gt;&lt;/xsl:value-of&gt;
+        &lt;/xsl:variable&gt;
+        &lt;ReadToken&gt;
+            &lt;xsl:value-of select=&quot;concat(&amp;apos;Bearer&amp;apos;, &amp;apos; &amp;apos;, $token)&quot;&gt;&lt;/xsl:value-of&gt;
+        &lt;/ReadToken&gt;
+        &lt;io xmlns=&quot;urn:com.sap.b1i.bizprocessor:bizatoms&quot; pltype=&quot;json&quot;&gt;
+            &lt;array name=&quot;b1events&quot;&gt;
+                &lt;xsl:for-each select=&quot;/Event/b1e:b1events/b1e:b1event&quot;&gt;
+                    &lt;object&gt;
+                        &lt;string name=&quot;EventSource&quot;&gt;
+                            &lt;xsl:value-of select=&quot;./b1e:eventsource&quot;&gt;&lt;/xsl:value-of&gt;
+                        &lt;/string&gt;
+                        &lt;string name=&quot;ObjectType&quot;&gt;
+                            &lt;xsl:value-of select=&quot;./b1e:objecttype&quot;&gt;&lt;/xsl:value-of&gt;
+                        &lt;/string&gt;
+                        &lt;string name=&quot;TransactionType&quot;&gt;
+                            &lt;xsl:value-of select=&quot;./b1e:transactiontype&quot;&gt;&lt;/xsl:value-of&gt;
+                        &lt;/string&gt;
+                        &lt;string name=&quot;UserCode&quot;&gt;
+                            &lt;xsl:value-of select=&quot;./b1e:usercode&quot;&gt;&lt;/xsl:value-of&gt;
+                        &lt;/string&gt;
+                        &lt;string name=&quot;UserId&quot;&gt;
+                            &lt;xsl:value-of select=&quot;./b1e:userid&quot;&gt;&lt;/xsl:value-of&gt;
+                        &lt;/string&gt;
+                        &lt;array name=&quot;keys&quot;&gt;
+                            &lt;xsl:for-each select=&quot;./b1e:keys/b1e:key&quot;&gt;
+                                &lt;object&gt;
+                                    &lt;string name=&quot;Name&quot;&gt;
+                                        &lt;xsl:value-of select=&quot;./b1e:name&quot;&gt;&lt;/xsl:value-of&gt;
+                                    &lt;/string&gt;
+                                    &lt;string name=&quot;Value&quot;&gt;
+                                        &lt;xsl:value-of select=&quot;./b1e:value&quot;&gt;&lt;/xsl:value-of&gt;
+                                    &lt;/string&gt;
+                                &lt;/object&gt;
+                            &lt;/xsl:for-each&gt;
+                        &lt;/array&gt;
+                    &lt;/object&gt;
+                &lt;/xsl:for-each&gt;
+            &lt;/array&gt;
+        &lt;/io&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt;
+</code></pre>
+<p>After the message has been prepared for sending, the HTTP call takes care of delivering the message to the SAP Event Mesh instance. For this step some additional HTTP headers are needed:</p>
+<ul>
+<li><code>Authorization</code>: Contains the OAuth token</li>
+<li><code>x-qos</code>:  Quality of service desired for this message</li>
+<li><code>content-type</code>: Content type to ensure correct processing in the consuming application</li>
+</ul>
+<p>Additionally, the <code>pltype</code> configuration is set as json to ensure the correct output format. In the <code>destPath</code> configuration the queue name is populated to identify the queue the message is meant for. The queue name should be URl encoded as stated in the <a href="https://api.sap.com/api/SAPEventMeshDefaultMessagingAPIs/resource">SAP Event Mesh API documentation</a>. The value of the <code>Authorization</code> header is populated through the following XPath expression accessing the attribute holding the token in the message:</p>
+<p><code>/vpf:Msg/vpf:Body/vpf:Payload[./@id=&amp;apos;PrepareMessage4CPI&amp;apos;]/ReadToken</code></p>
+<p>
+<em style="color: red">put image "HTTP call to SAP Event Mesh" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">HTTP call to SAP Event Mesh</p>
+
+<h2 id="result-in-sap-event-mesh">Result in SAP Event Mesh</h2>
+<p>The resulting message in SAP Event Mesh can be viewed in the SAP Event Mesh application accessible through the BTP cockpit. After going to the Test section of the UI and selecting the queue previously defined in the destination path (and of course triggering the scenario by creating an order in your B1 system) you should see that there is a new message looking something like this:</p>
+<p>
+<em style="color: red">put image "SAP Event Mesh test console" here</em>
+</p>
+<p class="image_caption" style="text-align: center; font-style: italic;">SAP Event Mesh test console</p>
+
+<h2 id="summary">Summary</h2>
+<p>Now that you have your Business Event in the SAP Event Mesh you can go ahead and build extension scenarios with that information, add more scenarios in the B1If for other events or change the information transmitted with the event. This setup enables you to develop decoupled business extensions in SAP Business Technology Platform with all the tools and services provided by SAP BTP in whichever language suits you or your use case best.</p>
+<p>If you’re interested in more use cases that could benefit from such a decoupled setup I recommend you to head over to the quite similar blog on <a href="https://blogs.sap.com/2020/10/09/how-to-get-sap-business-bydesign-events-in-a-loosely-coupled-solution/">connecting SAP ByDesign to SAP Event Mesh</a> by <a href="https://people.sap.com/mariatrinidad.martinezgea">Maria Trinidad MARTINEZ GEA</a>.</p>
+<p>I’d like to thank my customer Actovent and their partner Agilita for the opportunity to get this to work as a team effort as well as my colleague <a href="https://people.sap.com/nicolas.fuchs">Nicolas Fuchs</a> for his help on the B1If side!</p>
