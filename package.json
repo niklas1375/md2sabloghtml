@@ -18,6 +18,6 @@
   "author": "Niklas Miroll",
   "license": "BSD-3-Clause",
   "dependencies": {
-    "marked": "^4.2.2"
+    "marked": "^4.2.12"
   }
 }
